@@ -28,7 +28,6 @@ namespace TaggerLib
 
             string filePath = args[args.Length - 1];
             string command = args[0].ToLower();
-
             try
             {
                 var file = TagLib.File.Create(filePath);
@@ -43,9 +42,11 @@ namespace TaggerLib
                         }
                         AddImage(file, args[1]);
                         break;
+
                     case "-delimages":
                         RemoveCoverImage(file);
                         break;
+
                     case "-setrating":
                         if (args.Length < 3 || !int.TryParse(args[1], out int rating))
                         {
@@ -54,10 +55,12 @@ namespace TaggerLib
                         }
                         SetRating(file, rating);
                         break;
+
                     case "-readall":
                         bool fixDuplicates = args.Length > 2 && args[1] == "-f";
                         ReadAllTags(file, fixDuplicates);
                         break;
+
                     default:
                         Console.WriteLine("Unknown command. Use -addimage, -delimages, -setrating, or -readall.");
                         break;
@@ -101,7 +104,6 @@ namespace TaggerLib
                 Console.WriteLine("Popularimeter frame not found.");
                 return;
             }
-
             popmFrame.Rating = (byte)Math.Min(Math.Max(rating, 0), 255);
             Console.WriteLine("Rating set.");
         }
@@ -111,104 +113,50 @@ namespace TaggerLib
             Console.WriteLine($"Reading tags for file: {file.Name}");
             Console.WriteLine($"File MIME type: {file.MimeType}");
 
-            if (file.MimeType == "taglib/flac")
+            var tag = file.GetTag(TagTypes.Id3v2) as TagLib.Id3v2.Tag;
+            if (tag == null)
             {
-                var tag = file.GetTag(TagLib.TagTypes.Xiph) as TagLib.Ogg.XiphComment;
-                if (tag == null)
-                {
-                    Console.WriteLine("FLAC tag not found.");
-                    return;
-                }
-                var comments = tag.GetField("COMMENT");
-                Console.WriteLine($"Found {comments.Length} comments.");
+                Console.WriteLine("ID3v2 tag not found.");
+                return;
+            }
 
-                var commentCounts = new Dictionary<string, int>();
-                foreach (var comment in comments)
-                {
-                    if (commentCounts.ContainsKey(comment))
-                    {
-                        commentCounts[comment]++;
-                    }
-                    else
-                    {
-                        commentCounts[comment] = 1;
-                    }
-                }
+            var frames = tag.GetFrames().ToList();
+            Console.WriteLine($"Found {frames.Count} frames.");
 
-                foreach (var commentCount in commentCounts)
+            var frameCounts = new Dictionary<string, int>();
+            foreach (var frame in frames)
+            {
+                var frameId = frame.FrameId.ToString();
+                if (frameCounts.ContainsKey(frameId))
                 {
-                    if (commentCount.Value > 1)
-                    {
-                        Console.WriteLine($"Duplicate tag found: {commentCount.Key} ({commentCount.Value} times)");
-                        if (fixDuplicates)
-                        {
-                            RemoveDuplicateComments(tag, commentCount.Key);
-                            Console.WriteLine($"Duplicate tag {commentCount.Key} fixed.");
-                        }
-                    }
+                    frameCounts[frameId]++;
+                }
+                else
+                {
+                    frameCounts[frameId] = 1;
                 }
             }
-            else
+
+            foreach (var frameCount in frameCounts)
             {
-                var tag = file.GetTag(TagTypes.Id3v2) as TagLib.Id3v2.Tag;
-                if (tag == null)
+                if (frameCount.Value > 1)
                 {
-                    Console.WriteLine("ID3v2 tag not found.");
-                    return;
-                }
-                var frames = tag.GetFrames().ToList();
-                Console.WriteLine($"Found {frames.Count} frames.");
-
-                var frameCounts = new Dictionary<string, int>();
-                foreach (var frame in frames)
-                {
-                    var frameId = frame.FrameId.ToString();
-                    if (frameCounts.ContainsKey(frameId))
+                    Console.WriteLine($"Duplicate tag found: {frameCount.Key} ({frameCount.Value} times)");
+                    if (fixDuplicates)
                     {
-                        frameCounts[frameId]++;
-                    }
-                    else
-                    {
-                        frameCounts[frameId] = 1;
-                    }
-                }
-
-                foreach (var frameCount in frameCounts)
-                {
-                    if (frameCount.Value > 1)
-                    {
-                        Console.WriteLine($"Duplicate tag found: {frameCount.Key} ({frameCount.Value} times)");
-                        if (fixDuplicates)
-                        {
-                            RemoveDuplicateFrames(tag, frameCount.Key);
-                            Console.WriteLine($"Duplicate tag {frameCount.Key} fixed.");
-                        }
+                        RemoveDuplicateFrames(tag, frameCount.Key, frameCount.Value - 1);
+                        Console.WriteLine($"Duplicate tag {frameCount.Key} fixed.");
                     }
                 }
             }
         }
 
-        static void RemoveDuplicateComments(TagLib.Ogg.XiphComment tag, string commentKey)
-        {
-            var comments = tag.GetField(commentKey).ToList();
-            if (comments.Count > 1)
-            {
-                for (int i = 1; i < comments.Count; i++)
-                {
-                    tag.RemoveField(commentKey);
-                }
-            }
-        }
-
-        static void RemoveDuplicateFrames(TagLib.Id3v2.Tag tag, string frameId)
+        static void RemoveDuplicateFrames(TagLib.Id3v2.Tag tag, string frameId, int duplicatesToRemove)
         {
             var frames = tag.GetFrames(frameId).ToList();
-            if (frames.Count > 1)
+            for (int i = 0; i < duplicatesToRemove; i++)
             {
-                for (int i = 1; i < frames.Count; i++)
-                {
-                    tag.RemoveFrame(frames[i]);
-                }
+                tag.RemoveFrame(frames[i + 1]);
             }
         }
     }
