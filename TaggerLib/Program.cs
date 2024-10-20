@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.Versioning;
 using TagLib;
 using TagLib.Id3v2;
 
@@ -15,20 +16,18 @@ namespace TaggerLib
 
             if (args.Length < 2)
             {
-                Console.WriteLine("TaggerLib 1.0");
-                Console.WriteLine("(c) RyTec Software 2024");
+                Console.WriteLine("TaggerLib 1.1");
+                Console.WriteLine("Usage: TaggerLib.exe [options] filepath");
                 Console.WriteLine("");
-                Console.WriteLine("Usage: TaggerLib.exe filepath [options]");
-                Console.WriteLine("");
-                Console.WriteLine("add <ImagePath>              Adds cover image");
-                Console.WriteLine("remove                       Removes images");
-                Console.WriteLine("setrating <value>            Sets rating (value between 0-255)");
-                Console.WriteLine("findduplicates [-f]          Finds (and fixes with -f) duplicate tags");
+                Console.WriteLine("-addimage <ImagePath>        Adds image");
+                Console.WriteLine("-delimages                   Removes images");
+                Console.WriteLine("-setrating <value>           Sets rating (value between 0-255)");
+                Console.WriteLine("-readall [-f]                Reads all tags (and fixes with -f)");
                 return;
             }
 
-            string filePath = args[0];
-            string command = args[1].ToLower();
+            string filePath = args[args.Length - 1];
+            string command = args[0].ToLower();
 
             try
             {
@@ -36,35 +35,31 @@ namespace TaggerLib
 
                 switch (command)
                 {
-                    case "add":
+                    case "-addimage":
                         if (args.Length < 3)
                         {
-                            Console.WriteLine("Usage: TaggerLib.exe <filepath> add <coverImagePath>");
+                            Console.WriteLine("Usage: TaggerLib.exe -addimage <coverImagePath> filepath");
                             return;
                         }
-                        AddCoverImage(file, args[2]);
+                        AddImage(file, args[1]);
                         break;
-
-                    case "remove":
+                    case "-delimages":
                         RemoveCoverImage(file);
                         break;
-
-                    case "setrating":
-                        if (args.Length < 3 || !int.TryParse(args[2], out int rating))
+                    case "-setrating":
+                        if (args.Length < 3 || !int.TryParse(args[1], out int rating))
                         {
-                            Console.WriteLine("Usage: TaggerLib.exe <filepath> setrating <value>");
+                            Console.WriteLine("Usage: TaggerLib.exe -setrating <value> filepath");
                             return;
                         }
                         SetRating(file, rating);
                         break;
-
-                    case "findduplicates":
-                        bool fixDuplicates = args.Length > 2 && args[2] == "-f";
-                        FindDuplicateTags(file, fixDuplicates);
+                    case "-readall":
+                        bool fixDuplicates = args.Length > 2 && args[1] == "-f";
+                        ReadAllTags(file, fixDuplicates);
                         break;
-
                     default:
-                        Console.WriteLine("Unknown command. Use add, remove, setrating, or findduplicates.");
+                        Console.WriteLine("Unknown command. Use -addimage, -delimages, -setrating, or -readall.");
                         break;
                 }
 
@@ -77,18 +72,19 @@ namespace TaggerLib
             }
         }
 
-        static void AddCoverImage(TagLib.File file, string coverImagePath)
+        static void AddImage(TagLib.File file, string coverImagePath)
         {
             var picture = new Picture(coverImagePath);
-            var pictures = new IPicture[] { picture };
-            file.Tag.Pictures = pictures;
-            Console.WriteLine("Cover image added.");
+            var pictures = file.Tag.Pictures.ToList();
+            pictures.Add(picture);
+            file.Tag.Pictures = pictures.ToArray();
+            Console.WriteLine("Image added.");
         }
 
         static void RemoveCoverImage(TagLib.File file)
         {
             file.Tag.Pictures = new IPicture[0];
-            Console.WriteLine("Cover image removed.");
+            Console.WriteLine("Images removed.");
         }
 
         static void SetRating(TagLib.File file, int rating)
@@ -99,7 +95,6 @@ namespace TaggerLib
                 Console.WriteLine("ID3v2 tag not found.");
                 return;
             }
-
             var popmFrame = PopularimeterFrame.Get(tag, "Windows Media Player 9 Series", true);
             if (popmFrame == null)
             {
@@ -107,46 +102,100 @@ namespace TaggerLib
                 return;
             }
 
-            // Set your custom rating (0-255)
             popmFrame.Rating = (byte)Math.Min(Math.Max(rating, 0), 255);
             Console.WriteLine("Rating set.");
         }
 
-        static void FindDuplicateTags(TagLib.File file, bool fixDuplicates)
+        static void ReadAllTags(TagLib.File file, bool fixDuplicates)
         {
-            var tag = file.GetTag(TagTypes.Id3v2) as TagLib.Id3v2.Tag;
-            if (tag == null)
-            {
-                Console.WriteLine("ID3v2 tag not found.");
-                return;
-            }
+            Console.WriteLine($"Reading tags for file: {file.Name}");
+            Console.WriteLine($"File MIME type: {file.MimeType}");
 
-            var frames = tag.GetFrames().ToList();
-            var frameCounts = new Dictionary<string, int>();
-
-            foreach (var frame in frames)
+            if (file.MimeType == "taglib/flac")
             {
-                var frameId = frame.FrameId.ToString();
-                if (frameCounts.ContainsKey(frameId))
+                var tag = file.GetTag(TagLib.TagTypes.Xiph) as TagLib.Ogg.XiphComment;
+                if (tag == null)
                 {
-                    frameCounts[frameId]++;
+                    Console.WriteLine("FLAC tag not found.");
+                    return;
                 }
-                else
-                {
-                    frameCounts[frameId] = 1;
-                }
-            }
+                var comments = tag.GetField("COMMENT");
+                Console.WriteLine($"Found {comments.Length} comments.");
 
-            foreach (var frameCount in frameCounts)
-            {
-                if (frameCount.Value > 1)
+                var commentCounts = new Dictionary<string, int>();
+                foreach (var comment in comments)
                 {
-                    Console.WriteLine($"Duplicate tag found: {frameCount.Key} - {frameCount.Value} times");
-                    if (fixDuplicates)
+                    if (commentCounts.ContainsKey(comment))
                     {
-                        RemoveDuplicateFrames(tag, frameCount.Key);
-                        Console.WriteLine($"Duplicate tag {frameCount.Key} fixed.");
+                        commentCounts[comment]++;
                     }
+                    else
+                    {
+                        commentCounts[comment] = 1;
+                    }
+                }
+
+                foreach (var commentCount in commentCounts)
+                {
+                    if (commentCount.Value > 1)
+                    {
+                        Console.WriteLine($"Duplicate tag found: {commentCount.Key} ({commentCount.Value} times)");
+                        if (fixDuplicates)
+                        {
+                            RemoveDuplicateComments(tag, commentCount.Key);
+                            Console.WriteLine($"Duplicate tag {commentCount.Key} fixed.");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                var tag = file.GetTag(TagTypes.Id3v2) as TagLib.Id3v2.Tag;
+                if (tag == null)
+                {
+                    Console.WriteLine("ID3v2 tag not found.");
+                    return;
+                }
+                var frames = tag.GetFrames().ToList();
+                Console.WriteLine($"Found {frames.Count} frames.");
+
+                var frameCounts = new Dictionary<string, int>();
+                foreach (var frame in frames)
+                {
+                    var frameId = frame.FrameId.ToString();
+                    if (frameCounts.ContainsKey(frameId))
+                    {
+                        frameCounts[frameId]++;
+                    }
+                    else
+                    {
+                        frameCounts[frameId] = 1;
+                    }
+                }
+
+                foreach (var frameCount in frameCounts)
+                {
+                    if (frameCount.Value > 1)
+                    {
+                        Console.WriteLine($"Duplicate tag found: {frameCount.Key} ({frameCount.Value} times)");
+                        if (fixDuplicates)
+                        {
+                            RemoveDuplicateFrames(tag, frameCount.Key);
+                            Console.WriteLine($"Duplicate tag {frameCount.Key} fixed.");
+                        }
+                    }
+                }
+            }
+        }
+
+        static void RemoveDuplicateComments(TagLib.Ogg.XiphComment tag, string commentKey)
+        {
+            var comments = tag.GetField(commentKey).ToList();
+            if (comments.Count > 1)
+            {
+                for (int i = 1; i < comments.Count; i++)
+                {
+                    tag.RemoveField(commentKey);
                 }
             }
         }

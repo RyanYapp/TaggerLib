@@ -3,8 +3,12 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net48</TargetFramework>
+    <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
     <ApplicationIcon>ico.ico</ApplicationIcon>
     <Copyright>(c) RyTec Software 2024</Copyright>
+    <FileVersion>1.1</FileVersion>
+    <AutoGenerateBindingRedirects>True</AutoGenerateBindingRedirects>
+    <StartupObject>TaggerLib.Program</StartupObject>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -20,7 +24,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Costura.Fody" Version="5.7.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
   </ItemGroup>
+
+  <Target Name="RemoveAppConfigFiles" AfterTargets="Build">
+    <Delete Files="$(TargetDir)$(TargetName).exe.config" />
+  </Target>
 
 </Project>
